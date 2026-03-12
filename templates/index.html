@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pi Streamer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+  :root {
+    --green: #33ff33; --green-dim: #1a8c1a; --green-dark: #0d4d0d;
+    --amber: #ffaa00; --red: #ff3333;
+    --bg: #0a0a0a; --panel: #111; --border: #222; --text: #ccc;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'JetBrains Mono',monospace; background:var(--bg); color:var(--green); min-height:100vh; padding:1rem; }
+  .header { text-align:center; padding:1rem 0 .5rem; border-bottom:1px solid var(--border); margin-bottom:1rem; }
+  .header h1 { font-size:1.4rem; letter-spacing:.3rem; text-shadow:0 0 10px rgba(51,255,51,.3); }
+  .header .sub { font-size:.7rem; color:var(--green-dim); margin-top:.25rem; }
+  .container { max-width:600px; margin:0 auto; }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:4px; padding:1rem; margin-bottom:1rem; }
+  .panel-title { font-size:.7rem; color:var(--green-dim); text-transform:uppercase; letter-spacing:.15rem; margin-bottom:.75rem; padding-bottom:.25rem; border-bottom:1px solid var(--border); }
+
+  /* Device info */
+  .device-info { text-align:center; padding:.5rem; font-size:.85rem; color:var(--text); }
+  .device-info .device { color:var(--green); font-weight:bold; }
+
+  /* Signal meter */
+  .meter-row { display:flex; align-items:center; gap:.75rem; padding:.5rem 0; }
+  .meter-label { font-size:.65rem; color:var(--green-dim); text-transform:uppercase; min-width:2rem; }
+  .meter-bg { flex:1; height:18px; background:var(--bg); border:1px solid var(--border); border-radius:2px; position:relative; overflow:hidden; }
+  .meter-fill { position:absolute; top:0; left:0; bottom:0; width:0%; background:linear-gradient(90deg, var(--green-dark), var(--green) 60%, var(--amber) 85%, var(--red)); transition:width .15s ease-out; border-radius:1px; }
+  .meter-peak { position:absolute; top:0; bottom:0; width:3px; background:var(--amber); transition:left .15s ease-out; left:0; }
+  .meter-val { font-size:.8rem; min-width:3rem; text-align:right; }
+  .meter-ticks { display:flex; justify-content:space-between; font-size:.5rem; color:#444; padding:0 .25rem; margin-left:2.75rem; margin-right:3.75rem; }
+
+  /* Controls */
+  .controls { display:grid; grid-template-columns:1fr 1fr; gap:.75rem; }
+  .cg { display:flex; flex-direction:column; }
+  .cg.wide { grid-column:1/-1; }
+  .cg label { font-size:.65rem; color:var(--green-dim); text-transform:uppercase; letter-spacing:.1rem; margin-bottom:.25rem; }
+  .cg input, .cg select { background:var(--bg); border:1px solid var(--border); color:var(--green); font-family:inherit; font-size:.9rem; padding:.4rem .5rem; border-radius:2px; outline:none; }
+  .cg input:focus, .cg select:focus { border-color:var(--green-dim); box-shadow:0 0 5px rgba(51,255,51,.15); }
+  .cg select { cursor:pointer; }
+  .cg select option { background:var(--bg); }
+
+  /* Buttons */
+  .btn-row { display:flex; gap:.75rem; margin-top:.5rem; }
+  .btn { flex:1; font-family:inherit; font-size:.85rem; font-weight:bold; padding:.6rem 1rem; border:1px solid; border-radius:2px; cursor:pointer; text-transform:uppercase; letter-spacing:.1rem; transition:all .15s; }
+  .btn-go { background:var(--green-dark); border-color:var(--green-dim); color:var(--green); }
+  .btn-go:hover { background:var(--green-dim); color:var(--bg); box-shadow:0 0 10px rgba(51,255,51,.3); }
+  .btn-go:disabled { opacity:.3; cursor:not-allowed; box-shadow:none; }
+  .btn-stop { background:#330000; border-color:#661a1a; color:var(--red); }
+  .btn-stop:hover { background:#661a1a; color:#fff; }
+  .btn-stop:disabled { opacity:.3; cursor:not-allowed; }
+
+  /* Status */
+  .status { font-size:.7rem; padding:.5rem 0; display:flex; align-items:center; gap:.5rem; }
+  .dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
+  .dot.off { background:#333; }
+  .dot.on { background:var(--green); box-shadow:0 0 6px var(--green); }
+  .dot.err { background:var(--red); box-shadow:0 0 6px var(--red); }
+  .err-text { color:var(--red); font-size:.65rem; margin-top:.25rem; }
+
+  /* Log */
+  .log { background:var(--bg); border:1px solid var(--border); border-radius:2px; padding:.5rem; font-size:.6rem; color:var(--green-dim); max-height:100px; overflow-y:auto; white-space:pre-wrap; word-break:break-all; }
+
+  @media(max-width:500px) { .controls{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <h1>&#127925; PI STREAMER</h1>
+    <div class="sub">Line-In &rarr; Icecast MP3 Stream</div>
+  </div>
+
+  <!-- Device info -->
+  <div class="panel">
+    <div class="device-info">
+      ALSA Device: <span class="device" id="alsa-dev">detecting...</span>
+    </div>
+  </div>
+
+  <!-- Signal meter -->
+  <div class="panel">
+    <div class="panel-title">Stream Status</div>
+    <div class="meter-row">
+      <span class="meter-label">SIG</span>
+      <div class="meter-bg">
+        <div class="meter-fill" id="mf"></div>
+        <div class="meter-peak" id="mp"></div>
+      </div>
+      <span class="meter-val" id="mv">0</span>
+    </div>
+    <div class="meter-ticks"><span>0</span><span>20</span><span>40</span><span>60</span><span>80</span><span>100</span></div>
+  </div>
+
+  <!-- Audio settings -->
+  <div class="panel">
+    <div class="panel-title">Audio Settings</div>
+    <div class="controls">
+      <div class="cg">
+        <label>Bitrate (kbps)</label>
+        <select id="bitrate">
+          <option value="64">64</option>
+          <option value="96">96</option>
+          <option value="128" selected>128</option>
+          <option value="192">192</option>
+        </select>
+      </div>
+      <div class="cg">
+        <label>&nbsp;</label>
+        <div style="font-size:.6rem;color:#555;padding-top:.4rem;">
+          Lower = less bandwidth, higher = better quality
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audio EQ -->
+  <div class="panel">
+    <div class="panel-title">Audio EQ &amp; Filter</div>
+    <div class="controls">
+      <div class="cg">
+        <label>Low Cut (<span id="lc-val">200</span> Hz)</label>
+        <input type="range" id="eq-low-cut" min="0" max="500" step="50" value="200" style="accent-color:var(--green);">
+      </div>
+      <div class="cg">
+        <label>High Cut (<span id="hc-val">4000</span> Hz)</label>
+        <input type="range" id="eq-high-cut" min="2000" max="20000" step="500" value="4000" style="accent-color:var(--green);">
+      </div>
+      <div class="cg">
+        <label>Speech Boost (<span id="sb-val">0</span> dB)</label>
+        <input type="range" id="eq-speech-boost" min="0" max="15" value="0" style="accent-color:var(--green);">
+      </div>
+      <div class="cg">
+        <label>Noise Gate (<span id="gate-val">2</span>)</label>
+        <input type="range" id="gate-threshold" min="0" max="10" value="2" style="accent-color:var(--green);">
+      </div>
+      <div class="cg wide" style="font-size:.55rem;color:#555;padding:0 .25rem;">
+        Speech preset: Low 200 / High 3500 / Boost 6 / Gate 3 &bull;
+        Set High Cut to 20000 and Gate to 0 for passthrough
+      </div>
+    </div>
+  </div>
+
+  <!-- Start / Stop -->
+  <div class="panel">
+    <div class="btn-row">
+      <button class="btn btn-go" id="btn-go" onclick="doStart()">&#9654; Start</button>
+      <button class="btn btn-stop" id="btn-st" onclick="doStop()" disabled>&#9632; Stop</button>
+    </div>
+    <div class="status">
+      <span class="dot off" id="dot"></span>
+      <span id="stxt" style="color:var(--text)">Stopped</span>
+    </div>
+    <div class="err-text" id="etxt"></div>
+  </div>
+
+  <!-- Log -->
+  <div class="panel">
+    <div class="panel-title">Log</div>
+    <div class="log" id="log">Pi Streamer ready.
+</div>
+  </div>
+
+</div>
+
+<script>
+let poll = null;
+const logEl = document.getElementById('log');
+
+function log(m) {
+  const t = new Date().toLocaleTimeString('en-GB',{hour12:false});
+  logEl.textContent += '['+t+'] '+m+'\n';
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// Slider labels
+document.getElementById('eq-low-cut').addEventListener('input', function(){
+  document.getElementById('lc-val').textContent = this.value;
+});
+document.getElementById('eq-high-cut').addEventListener('input', function(){
+  document.getElementById('hc-val').textContent = this.value;
+});
+document.getElementById('eq-speech-boost').addEventListener('input', function(){
+  document.getElementById('sb-val').textContent = this.value;
+});
+document.getElementById('gate-threshold').addEventListener('input', function(){
+  document.getElementById('gate-val').textContent = this.value;
+});
+
+function getSettings() {
+  return {
+    bitrate: parseInt(document.getElementById('bitrate').value),
+    gate_threshold: parseInt(document.getElementById('gate-threshold').value),
+    eq_low_cut: parseInt(document.getElementById('eq-low-cut').value),
+    eq_high_cut: parseInt(document.getElementById('eq-high-cut').value),
+    eq_speech_boost: parseInt(document.getElementById('eq-speech-boost').value),
+  };
+}
+
+async function doStart(){
+  const b = document.getElementById('btn-go');
+  b.disabled=true; b.textContent='\u23F3 Starting...';
+  log('Starting pipeline...');
+  try {
+    const r = await fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(getSettings())});
+    const d = await r.json();
+    if(d.ok){
+      log('Pipeline started');
+      if(d.cmd) log('CMD: '+d.cmd);
+      setRun(true); startPoll();
+    } else {
+      log('ERROR: '+d.error);
+      document.getElementById('etxt').textContent=d.error;
+      b.disabled=false; b.textContent='\u25B6 Start';
+    }
+  } catch(e){
+    log('ERROR: '+e.message);
+    b.disabled=false; b.textContent='\u25B6 Start';
+  }
+}
+
+async function doStop(){
+  log('Stopping...'); document.getElementById('btn-st').disabled=true;
+  try { await fetch('/api/stop',{method:'POST'}); log('Stopped'); } catch(e){ log('Stop err: '+e.message); }
+  setRun(false); stopPoll(); updateMeter(0,0);
+}
+
+function startPoll(){ stopPoll(); poll=setInterval(pollStatus,500); }
+function stopPoll(){ if(poll){clearInterval(poll);poll=null;} }
+async function pollStatus(){
+  try {
+    const r = await fetch('/api/status');
+    const d = await r.json();
+    updateMeter(d.signal_level, d.peak_level);
+    if(!d.running){
+      setRun(false); stopPoll();
+      if(d.error){ log('Died: '+d.error); document.getElementById('etxt').textContent=d.error; }
+    }
+  } catch(e){}
+}
+
+function setRun(on){
+  document.getElementById('btn-go').disabled=on;
+  document.getElementById('btn-go').textContent='\u25B6 Start';
+  document.getElementById('btn-st').disabled=!on;
+  const dot=document.getElementById('dot'), txt=document.getElementById('stxt');
+  if(on){ dot.className='dot on'; txt.textContent='Streaming'; document.getElementById('etxt').textContent=''; }
+  else { dot.className='dot off'; txt.textContent='Stopped'; }
+}
+
+function updateMeter(lv,pk){
+  document.getElementById('mf').style.width=lv+'%';
+  document.getElementById('mp').style.left=Math.min(pk,100)+'%';
+  document.getElementById('mv').textContent=Math.round(lv);
+}
+
+// Init: load current state and sync UI
+async function initState(){
+  try {
+    const r = await fetch('/api/status');
+    const d = await r.json();
+    if(d.alsa_device) document.getElementById('alsa-dev').textContent = d.alsa_device;
+    if(d.tuning){
+      const t = d.tuning;
+      if(t.bitrate) document.getElementById('bitrate').value=t.bitrate;
+      if(t.gate_threshold!==undefined){ document.getElementById('gate-threshold').value=t.gate_threshold; document.getElementById('gate-val').textContent=t.gate_threshold; }
+      if(t.eq_low_cut!==undefined){ document.getElementById('eq-low-cut').value=t.eq_low_cut; document.getElementById('lc-val').textContent=t.eq_low_cut; }
+      if(t.eq_high_cut!==undefined){ document.getElementById('eq-high-cut').value=t.eq_high_cut; document.getElementById('hc-val').textContent=t.eq_high_cut; }
+      if(t.eq_speech_boost!==undefined){ document.getElementById('eq-speech-boost').value=t.eq_speech_boost; document.getElementById('sb-val').textContent=t.eq_speech_boost; }
+    }
+    if(d.running){
+      setRun(true); startPoll();
+      log('Stream already active (auto-started)');
+    }
+  }catch(e){}
+}
+initState();
+</script>
+</body>
+</html>
