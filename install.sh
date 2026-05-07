@@ -163,7 +163,7 @@ cat > /etc/icecast2/icecast.xml << ICEXML
         <logdir>/var/log/icecast2</logdir>
         <webroot>/usr/share/icecast2/web</webroot>
         <adminroot>/usr/share/icecast2/admin</adminroot>
-        <alias source="/" destination="/status.xsl"/>
+        <alias source="/" destination="/scanner"/>
     </paths>
     <logging>
         <accesslog>access.log</accesslog>
