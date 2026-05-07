@@ -128,7 +128,7 @@ info "USB audio: card ${USB_CARD} [${USB_NAME}] → ${ALSA_DEVICE}"
 info "Configuring Icecast..."
 
 # Generate a random password
-ICECAST_PW=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 16)
+ICECAST_PW=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16)
 
 cat > /etc/icecast2/icecast.xml << ICEXML
 <icecast>
