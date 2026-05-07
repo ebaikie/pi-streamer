@@ -68,6 +68,14 @@ write workloads like logging and stream state persistence.
 
 ### 3. Install Pi Streamer
 
+> **Reinstalling? If Tailscale is already running on the Pi**, bring it down first
+> so its DNS does not block package downloads:
+> ```bash
+> sudo tailscale down
+> echo "nameserver 1.1.1.1" | sudo tee /etc/resolv.conf
+> ```
+> Then proceed with install as normal.
+
 ```bash
 ssh pi@<pi-ip-address>
 
@@ -218,6 +226,16 @@ encoding at high bitrates uses more CPU.
 **Tailscale not connected after reboot:**
 Check: `sudo systemctl status tailscaled`. Re-authenticate if needed:
 `sudo tailscale up`.
+
+**install.sh fails or hangs when Tailscale is already installed:**
+Tailscale owns `/etc/resolv.conf` and sets its own DNS (`100.100.100.100`)
+which cannot resolve external hostnames, blocking apt and other downloads.
+Fix: bring Tailscale down before running the installer:
+```bash
+sudo tailscale down
+echo "nameserver 1.1.1.1" | sudo tee /etc/resolv.conf
+sudo bash install.sh
+```
 
 ## License
 
